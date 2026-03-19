@@ -1,0 +1,87 @@
+# Ejemplo: Configuración avanzada de AWX
+#
+# Este archivo muestra opciones adicionales que puede personalizar
+# en el Custom Resource de AWX.
+#
+# Para usarlo, edite los valores según su necesidad y aplique:
+#   kubectl apply -f awx-instance-custom.yaml
+#
+# Referencia completa:
+#   https://docs.ansible.com/projects/awx-operator/en/latest/
+
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx
+  namespace: awx
+spec:
+  # ─── Acceso ────────────────────────────────────────────────────
+  service_type: NodePort
+  nodeport_port: 30080
+  # Para usar un hostname personalizado (requiere ingress):
+  # hostname: awx.miempresa.local
+
+  # ─── Imágenes AWX ─────────────────────────────────────────────
+  image: quay.io/ansible/awx
+  image_version: "24.6.1"
+  image_pull_policy: IfNotPresent       # CRÍTICO para instalación offline
+
+  # ─── Execution Environment ────────────────────────────────────
+  ee_images:
+    - name: AWX EE (24.6.1)
+      image: quay.io/ansible/awx-ee:24.6.1
+  control_plane_ee_image: quay.io/ansible/awx-ee:24.6.1
+
+  # ─── PostgreSQL ────────────────────────────────────────────────
+  postgres_image: docker.io/library/postgres
+  postgres_image_version: "15"
+  postgres_storage_class: standard
+  postgres_storage_requirements:
+    requests:
+      storage: 20Gi                     # Más storage para ambientes grandes
+    limits:
+      storage: 50Gi
+
+  # ─── Redis ─────────────────────────────────────────────────────
+  redis_image: docker.io/library/redis
+  redis_image_version: "7"
+
+  # ─── Recursos (ajustar según hardware disponible) ─────────────
+  web_resource_requirements:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  task_resource_requirements:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  ee_resource_requirements:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+  # ─── Réplicas (para servidores con más recursos) ──────────────
+  # web_replicas: 1
+  # task_replicas: 1
+
+  # ─── Configuración adicional ──────────────────────────────────
+  # admin_user: admin
+  # admin_email: admin@ejemplo.com
+
+  # Deshabilitar telemetría (recomendado para ambientes offline)
+  extra_settings:
+    - setting: INSIGHTS_TRACKING_STATE
+      value: "false"
+    - setting: TOWER_URL_BASE
+      value: "http://awx.miempresa.local"

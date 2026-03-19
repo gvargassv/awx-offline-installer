@@ -1,0 +1,22 @@
+# Bundle files (too large for git)
+awx-offline-bundle/
+awx-offline-bundle.tar.gz
+*.tar
+*.tar.gz
+
+# RPMs
+rpms/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
