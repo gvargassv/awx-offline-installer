@@ -33,14 +33,10 @@ ETCD_VERSION="3.5.12-0"
 PAUSE_VERSION="3.9"
 STORAGE_PROVISIONER_VERSION="v5"
 
-# Docker CE RPM versions para RHEL/Rocky 9 x86_64
-# Estas se descargan directo del repo de Docker — funciona desde cualquier SO
+# Docker CE RPMs para RHEL/Rocky 9 x86_64
+# Se descargan directo del repo de Docker — funciona desde cualquier SO
 DOCKER_REPO_URL="https://download.docker.com/linux/centos/9/x86_64/stable/Packages"
-CONTAINERD_VERSION="1.7.27-3.1.el9"
-DOCKER_CE_VERSION="27.5.1-1.el9"
-DOCKER_CE_CLI_VERSION="27.5.1-1.el9"
-DOCKER_BUILDX_VERSION="0.21.2-1.el9"
-DOCKER_COMPOSE_VERSION="2.34.0-1.el9"
+# Las versiones se detectan automáticamente del repositorio (ver paso 3)
 
 # ─── Colores y formato ───────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -196,20 +192,43 @@ log_success "Estructura creada: $(pwd)"
 # ─── PASO 3: RPMs de Docker CE ──────────────────────────────────────────────
 log_step "PASO 3/7 — Descargar RPMs de Docker CE para Rocky/RHEL 9"
 
-log_info "Descargando RPMs directamente desde el repositorio oficial de Docker"
+log_info "Detectando últimas versiones desde el repositorio oficial de Docker..."
 log_info "Fuente: ${DIM}${DOCKER_REPO_URL}${NC}"
-log_info "Estos RPMs se instalarán en el servidor destino (Rocky/RHEL 9 x86_64)"
 echo ""
 
-download_rpm "${DOCKER_REPO_URL}/containerd.io-${CONTAINERD_VERSION}.x86_64.rpm"
-download_rpm "${DOCKER_REPO_URL}/docker-ce-${DOCKER_CE_VERSION}.x86_64.rpm"
-download_rpm "${DOCKER_REPO_URL}/docker-ce-cli-${DOCKER_CE_CLI_VERSION}.x86_64.rpm"
-download_rpm "${DOCKER_REPO_URL}/docker-buildx-plugin-${DOCKER_BUILDX_VERSION}.x86_64.rpm"
-download_rpm "${DOCKER_REPO_URL}/docker-compose-plugin-${DOCKER_COMPOSE_VERSION}.x86_64.rpm"
-download_rpm "${DOCKER_REPO_URL}/docker-ce-rootless-extras-${DOCKER_CE_VERSION}.x86_64.rpm" 2>/dev/null || true
+# Obtener listado del repositorio y detectar la última versión de cada paquete
+REPO_LISTING=$(curl -sSL "${DOCKER_REPO_URL}/")
+
+find_latest_rpm() {
+    local pkg_prefix="$1"
+    # Buscar todos los RPMs que coincidan, extraer nombre, ordenar por versión, tomar el último
+    echo "$REPO_LISTING" | grep -oP "${pkg_prefix}-[0-9][^\"]*.x86_64\.rpm" | sort -V | tail -1
+}
+
+RPMS_TO_DOWNLOAD=(
+    "$(find_latest_rpm 'containerd.io')"
+    "$(find_latest_rpm 'docker-ce-cli')"
+    "$(find_latest_rpm 'docker-ce-rootless-extras')"
+    "$(find_latest_rpm 'docker-ce')"
+    "$(find_latest_rpm 'docker-buildx-plugin')"
+    "$(find_latest_rpm 'docker-compose-plugin')"
+)
+
+for rpm_file in "${RPMS_TO_DOWNLOAD[@]}"; do
+    if [[ -n "$rpm_file" ]]; then
+        download_rpm "${DOCKER_REPO_URL}/${rpm_file}"
+    fi
+done
 
 RPM_COUNT=$(ls rpms/*.rpm 2>/dev/null | wc -l)
-log_success "${RPM_COUNT} RPMs descargados para Rocky/RHEL 9 x86_64"
+if [[ $RPM_COUNT -eq 0 ]]; then
+    log_error "No se pudieron descargar RPMs. Verifique la conexión a internet."
+    ERRORS=$((ERRORS + 1))
+else
+    log_success "${RPM_COUNT} RPMs descargados para Rocky/RHEL 9 x86_64"
+    log_info "Versiones detectadas:"
+    ls rpms/*.rpm 2>/dev/null | while read -r f; do echo -e "    ${DIM}$(basename "$f")${NC}"; done
+fi
 
 # ─── PASO 4: Binarios ───────────────────────────────────────────────────────
 log_step "PASO 4/7 — Descargar binarios (Minikube + kubectl)"
@@ -272,8 +291,16 @@ pull_and_save "registry.k8s.io/coredns/coredns:${COREDNS_VERSION}" \
 pull_and_save "registry.k8s.io/etcd:${ETCD_VERSION}" \
               "etcd-${ETCD_VERSION}.tar"
 
-pull_and_save "registry.k8s.io/storage-provisioner:${STORAGE_PROVISIONER_VERSION}" \
-              "storage-provisioner-${STORAGE_PROVISIONER_VERSION}.tar"
+# storage-provisioner es una imagen de Minikube, no de registry.k8s.io
+# Se intenta descargar pero no es crítico — Minikube la incluye internamente
+log_info "Descargando: ${BOLD}gcr.io/k8s-minikube/storage-provisioner:${STORAGE_PROVISIONER_VERSION}${NC}"
+if docker pull "gcr.io/k8s-minikube/storage-provisioner:${STORAGE_PROVISIONER_VERSION}" 2>&1 | tail -1; then
+    docker save "gcr.io/k8s-minikube/storage-provisioner:${STORAGE_PROVISIONER_VERSION}" \
+        -o "images/storage-provisioner-${STORAGE_PROVISIONER_VERSION}.tar"
+    log_success "OK — $(du -h "images/storage-provisioner-${STORAGE_PROVISIONER_VERSION}.tar" | cut -f1)"
+else
+    log_warn "No se pudo descargar storage-provisioner (Minikube la incluye internamente, no es crítico)"
+fi
 
 # ─── PASO 6: Manifiestos y configuración ─────────────────────────────────────
 log_step "PASO 6/7 — Descargar AWX Operator y crear manifiestos"
