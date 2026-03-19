@@ -107,7 +107,7 @@ done
 # ─── Variables de control ────────────────────────────────────────────────────
 INSTALL_LOG="/var/log/awx-offline-install.log"
 START_TIME=$(date +%s)
-TOTAL_STEPS=8
+TOTAL_STEPS=9
 CURRENT_STEP=0
 
 next_step() {
@@ -165,7 +165,63 @@ echo ""
 exec > >(tee -a "${INSTALL_LOG}") 2>&1
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  PASO 1: Verificar requisitos
+#  PASO 1: Limpiar instalaciones previas
+# ═══════════════════════════════════════════════════════════════════════════════
+next_step "Limpiar instalaciones previas (si existen)"
+
+CLEANUP_DONE=false
+
+# Verificar si hay un Minikube previo corriendo
+if command -v minikube &>/dev/null && minikube status &>/dev/null 2>&1; then
+    log_warn "Se detectó un cluster Minikube existente"
+
+    # Verificar si hay AWX desplegado
+    if kubectl get namespace awx &>/dev/null 2>&1; then
+        log_info "Eliminando namespace 'awx' y todos sus recursos..."
+        kubectl delete namespace awx --timeout=120s 2>/dev/null || true
+        log_success "Namespace 'awx' eliminado"
+    fi
+
+    log_info "Deteniendo y eliminando cluster Minikube..."
+    minikube delete 2>/dev/null || true
+    log_success "Cluster Minikube eliminado"
+    CLEANUP_DONE=true
+elif command -v minikube &>/dev/null; then
+    # Minikube existe pero no está corriendo — limpiar de todas formas
+    log_info "Limpiando residuos de Minikube anterior..."
+    minikube delete 2>/dev/null || true
+    CLEANUP_DONE=true
+fi
+
+# Limpiar servicios systemd previos
+if [[ -f /etc/systemd/system/awx-portforward.service ]]; then
+    log_info "Deteniendo servicio awx-portforward anterior..."
+    systemctl stop awx-portforward 2>/dev/null || true
+    systemctl disable awx-portforward 2>/dev/null || true
+    rm -f /etc/systemd/system/awx-portforward.service
+    CLEANUP_DONE=true
+fi
+
+if [[ -f /etc/systemd/system/minikube.service ]]; then
+    log_info "Eliminando servicio minikube anterior..."
+    systemctl stop minikube 2>/dev/null || true
+    systemctl disable minikube 2>/dev/null || true
+    rm -f /etc/systemd/system/minikube.service
+    CLEANUP_DONE=true
+fi
+
+if [[ "${CLEANUP_DONE}" == true ]]; then
+    systemctl daemon-reload 2>/dev/null || true
+    log_success "Limpieza completada"
+else
+    log_success "No se detectaron instalaciones previas — ambiente limpio"
+fi
+
+# Limpiar directorio de kubeconfig
+rm -rf ~/.kube/config 2>/dev/null || true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PASO 2: Verificar requisitos
 # ═══════════════════════════════════════════════════════════════════════════════
 next_step "Verificar requisitos del sistema"
 
@@ -343,6 +399,7 @@ minikube start \
     --disk-size="${MK_DISK}" \
     --install-addons=false \
     --cache-images=false \
+    --force \
     --base-image="gcr.io/k8s-minikube/kicbase:${KICBASE_VERSION}" \
     --kubernetes-version="${K8S_VERSION}" \
     2>&1 | while read -r line; do echo "  ${line}"; done
@@ -486,7 +543,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/minikube start
+ExecStart=/usr/local/bin/minikube start --force
 ExecStop=/usr/local/bin/minikube stop
 User=root
 
