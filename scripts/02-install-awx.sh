@@ -413,7 +413,23 @@ else
     fail "El nodo de Minikube no está en estado Ready. Revise: minikube status"
 fi
 
-# Crear StorageClass "standard" si no existe (Minikube no siempre lo crea automáticamente)
+# Habilitar addons de storage (necesarios para PVC de PostgreSQL)
+log_info "Habilitando addons de storage en Minikube..."
+minikube addons enable storage-provisioner 2>&1 | tail -1
+minikube addons enable default-storageclass 2>&1 | tail -1
+log_success "Addons de storage habilitados"
+
+# Esperar que el storage-provisioner esté corriendo
+log_info "Esperando storage-provisioner..."
+for i in $(seq 1 30); do
+    if kubectl get pods -n kube-system 2>/dev/null | grep -q "storage-provisioner.*Running"; then
+        break
+    fi
+    sleep 2
+done
+log_success "Storage-provisioner activo"
+
+# Crear StorageClass "standard" si no existe (respaldo por si el addon no lo crea)
 if ! kubectl get sc standard &>/dev/null; then
     log_info "Creando StorageClass 'standard' para Minikube..."
     kubectl apply -f - <<SCEOF
