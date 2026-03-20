@@ -452,10 +452,14 @@ for img_file in "${AWX_IMAGES[@]}"; do
 done
 
 # Cargar kube-rbac-proxy si existe en el bundle (sidecar del Operator)
+# Se carga directamente en el Docker de Minikube y se re-tagea con gcr.io/...
 if [[ -f "${BUNDLE_DIR}/images/kube-rbac-proxy-v0.15.0.tar" ]]; then
-    log_info "Cargando: ${BOLD}kube-rbac-proxy-v0.15.0.tar${NC}"
-    minikube image load "${BUNDLE_DIR}/images/kube-rbac-proxy-v0.15.0.tar" 2>&1 | tail -1
-    log_success "kube-rbac-proxy-v0.15.0.tar"
+    log_info "Cargando: ${BOLD}kube-rbac-proxy-v0.15.0.tar${NC} (dentro de Minikube)"
+    eval $(minikube docker-env)
+    docker load -i "${BUNDLE_DIR}/images/kube-rbac-proxy-v0.15.0.tar" 2>&1 | tail -1
+    docker tag "kubebuilder/kube-rbac-proxy:v0.15.0" "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0" 2>/dev/null || true
+    eval $(minikube docker-env -u)
+    log_success "kube-rbac-proxy cargado y re-tageado como gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0"
 else
     log_warn "kube-rbac-proxy no encontrado en el bundle (Operator funcionará con 1/2 — no es crítico)"
 fi
