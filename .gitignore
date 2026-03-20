@@ -14,10 +14,6 @@ Thumbs.db
 # Logs
 *.log
 
-# Site notes (generated separately, not part of the repo)
-note-en.md
-note-es.md
-
 # Editor files
 *.swp
 *.swo

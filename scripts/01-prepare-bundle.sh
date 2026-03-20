@@ -25,6 +25,8 @@ set -euo pipefail
 AWX_VERSION="24.6.1"
 AWX_OPERATOR_VERSION="2.19.1"
 K8S_VERSION="v1.30.0"
+# Minikube - VERSIÓN FIJA para garantizar compatibilidad con kicbase
+MINIKUBE_VERSION="v1.34.0"
 KICBASE_VERSION="v0.0.45"
 POSTGRES_VERSION="15"
 REDIS_VERSION="7"
@@ -233,11 +235,11 @@ fi
 # ─── PASO 4: Binarios ───────────────────────────────────────────────────────
 log_step "PASO 4/7 — Descargar binarios (Minikube + kubectl)"
 
-log_info "Descargando Minikube..."
+log_info "Descargando Minikube ${MINIKUBE_VERSION} (versión fija para compatibilidad offline)..."
 curl -sSL -o binaries/minikube \
-    "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64"
+    "https://github.com/kubernetes/minikube/releases/download/${MINIKUBE_VERSION}/minikube-linux-amd64"
 chmod +x binaries/minikube
-log_success "Minikube descargado — $(du -h binaries/minikube | cut -f1)"
+log_success "Minikube ${MINIKUBE_VERSION} descargado — $(du -h binaries/minikube | cut -f1)"
 
 log_info "Descargando kubectl..."
 KUBECTL_VER=$(curl -sSL https://dl.k8s.io/release/stable.txt)
@@ -300,6 +302,16 @@ if docker pull "gcr.io/k8s-minikube/storage-provisioner:${STORAGE_PROVISIONER_VE
     log_success "OK — $(du -h "images/storage-provisioner-${STORAGE_PROVISIONER_VERSION}.tar" | cut -f1)"
 else
     log_warn "No se pudo descargar storage-provisioner (Minikube la incluye internamente, no es crítico)"
+fi
+
+# kube-rbac-proxy — sidecar del AWX Operator (sin esta imagen, el Operator queda en 1/2)
+log_info "Descargando: ${BOLD}gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0${NC}"
+if docker pull "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0" 2>&1 | tail -1; then
+    docker save "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0" \
+        -o "images/kube-rbac-proxy-v0.15.0.tar"
+    log_success "OK — $(du -h "images/kube-rbac-proxy-v0.15.0.tar" | cut -f1)"
+else
+    log_warn "No se pudo descargar kube-rbac-proxy (el Operator funciona sin él, no es crítico)"
 fi
 
 # ─── PASO 6: Manifiestos y configuración ─────────────────────────────────────
@@ -369,6 +381,7 @@ cat > versions.env << VEREOF
 AWX_VERSION="${AWX_VERSION}"
 AWX_OPERATOR_VERSION="${AWX_OPERATOR_VERSION}"
 K8S_VERSION="${K8S_VERSION}"
+MINIKUBE_VERSION="${MINIKUBE_VERSION}"
 KICBASE_VERSION="${KICBASE_VERSION}"
 POSTGRES_VERSION="${POSTGRES_VERSION}"
 REDIS_VERSION="${REDIS_VERSION}"

@@ -413,6 +413,25 @@ else
     fail "El nodo de Minikube no está en estado Ready. Revise: minikube status"
 fi
 
+# Crear StorageClass "standard" si no existe (Minikube no siempre lo crea automáticamente)
+if ! kubectl get sc standard &>/dev/null; then
+    log_info "Creando StorageClass 'standard' para Minikube..."
+    kubectl apply -f - <<SCEOF
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: standard
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: k8s.io/minikube-hostpath
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+SCEOF
+    log_success "StorageClass 'standard' creado"
+else
+    log_success "StorageClass 'standard' ya existe"
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  PASO 6: Cargar imágenes AWX en Minikube
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -431,6 +450,15 @@ for img_file in "${AWX_IMAGES[@]}"; do
     minikube image load "${BUNDLE_DIR}/images/${img_file}" 2>&1 | tail -1
     log_success "${img_file}"
 done
+
+# Cargar kube-rbac-proxy si existe en el bundle (sidecar del Operator)
+if [[ -f "${BUNDLE_DIR}/images/kube-rbac-proxy-v0.15.0.tar" ]]; then
+    log_info "Cargando: ${BOLD}kube-rbac-proxy-v0.15.0.tar${NC}"
+    minikube image load "${BUNDLE_DIR}/images/kube-rbac-proxy-v0.15.0.tar" 2>&1 | tail -1
+    log_success "kube-rbac-proxy-v0.15.0.tar"
+else
+    log_warn "kube-rbac-proxy no encontrado en el bundle (Operator funcionará con 1/2 — no es crítico)"
+fi
 
 echo ""
 log_info "Verificando imágenes en Minikube..."
