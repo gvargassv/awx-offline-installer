@@ -305,8 +305,12 @@ else
 fi
 
 # kube-rbac-proxy — sidecar del AWX Operator (sin esta imagen, el Operator queda en 1/2)
-log_info "Descargando: ${BOLD}gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0${NC}"
-if docker pull "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0" 2>&1 | tail -1; then
+# La imagen original gcr.io/kubebuilder/kube-rbac-proxy fue removida de GCR.
+# Se usa el mirror en Docker Hub: kubebuilder/kube-rbac-proxy
+log_info "Descargando: ${BOLD}kubebuilder/kube-rbac-proxy:v0.15.0${NC}"
+if docker pull "kubebuilder/kube-rbac-proxy:v0.15.0" 2>&1 | tail -1; then
+    # Re-tagear con el nombre que espera el Operator (gcr.io/...)
+    docker tag "kubebuilder/kube-rbac-proxy:v0.15.0" "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0"
     docker save "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0" \
         -o "images/kube-rbac-proxy-v0.15.0.tar"
     log_success "OK — $(du -h "images/kube-rbac-proxy-v0.15.0.tar" | cut -f1)"
